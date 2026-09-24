@@ -1,0 +1,436 @@
+{
+  "name": "Customer Support Ticket Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "bc0b7e4f-02be-4c16-9bf6-3dabe202c225",
+      "name": "Telegram Trigger",
+      "webhookId": "fd3d4d38-21fe-41e9-be8e-a94acdf2b284",
+      "credentials": {
+        "telegramApi": {
+          "id": "boYBy4nHFtJrOO31",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'gemma4:e2b',\n  stream: false,\n  format: 'json',\n  messages: [\n    {\n      role: 'system',\n      content: 'Classify a customer support message. Return only a JSON object with one field named category. The category must be exactly billing, technical, or general. Use billing for payments, invoices, refunds, and subscriptions. Use technical for bugs, login problems, and errors. Use general for other clear questions. Do not add explanations or markdown. Payment-related currency conversion and exchange-rate questions are billing.'\n    },\n    {\n      role: 'user',\n      content: $('Telegram Trigger').item.json.message.text ?? ''\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "8e4badde-05ce-488e-abc1-a110d589c08a",
+      "name": "HTTP Request",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const reply = $input.first().json;\nconst telegram = $('Telegram Trigger').first().json;\n\nlet category = 'fallback';\n\ntry {\n  const parsed = JSON.parse(reply.message?.content ?? '');\n  if (telegram.message?.text?.trim() && ['billing', 'technical', 'general'].includes(parsed.category)) {\n    category = parsed.category;\n  }\n} catch (error) {\n  // Invalid AI output goes to the fallback branch.\n}\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    user: telegram.message?.from?.first_name ?? 'Unknown',\n    chat_id: telegram.message?.chat?.id,\n    original_message: telegram.message?.text ?? '',\n    category\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "4871c77f-da17-4cb1-9258-be4179c919de",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "billing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ba1d2e83-5d46-4f2c-a688-92e446a21219"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7f392693-dc8b-4047-be56-167a9947f02e",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "technical",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "5787fcec-f80e-4b8a-8bb9-619b31050699",
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "general",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        0
+      ],
+      "id": "d32c2614-2812-41fc-89d5-12fcea944d2d",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Code in JavaScript').first().json.chat_id }}",
+        "text": "={{ 'Thanks for contacting support. We received your billing request and will review it.' + (/exchange rate|convert|USD|EUR/i.test($('Code in JavaScript').first().json.original_message) && $json.rate ? '\\n\\nCurrent reference rate: 1 USD = ' + $json.rate + ' EUR (dated ' + $json.date + ').' : '') }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1264,
+        -224
+      ],
+      "id": "f5e1a60a-02a0-4b26-a4ba-8de39df31047",
+      "name": "Send a text message",
+      "webhookId": "4ecc5afd-5528-43df-b0f3-52cc1a8c83a6",
+      "credentials": {
+        "telegramApi": {
+          "id": "boYBy4nHFtJrOO31",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "Thanks for reporting this technical issue. Please send the error message or a screenshot so we can investigate.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        16
+      ],
+      "id": "ab7fb0eb-eb56-466a-a78f-3217a42f1957",
+      "name": "Send a text message1",
+      "webhookId": "dd7db363-181a-4f7b-866a-da2ed472f13e",
+      "credentials": {
+        "telegramApi": {
+          "id": "boYBy4nHFtJrOO31",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "Thanks for contacting support. We received your question and will get back to you soon.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1168,
+        192
+      ],
+      "id": "1b920cdd-c9af-4980-bc38-db226be607ed",
+      "name": "Send a text message2",
+      "webhookId": "8aaf945d-d537-40b3-9d2a-80a382db512c",
+      "credentials": {
+        "telegramApi": {
+          "id": "boYBy4nHFtJrOO31",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "I couldn’t determine which support team should handle your message. Please describe your issue in a little more detail.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        336
+      ],
+      "id": "c9bf18bb-bba6-4275-829a-7ef19439c088",
+      "name": "Send a text message3",
+      "webhookId": "1ce74ff7-6bbc-4c56-b648-96a945a90056",
+      "credentials": {
+        "telegramApi": {
+          "id": "boYBy4nHFtJrOO31",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1jswIcucLy7Xyyxi6b4eWqwKvk0mNLGNGSST-zuj-oE0",
+          "mode": "list",
+          "cachedResultName": "Support Tickets.",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jswIcucLy7Xyyxi6b4eWqwKvk0mNLGNGSST-zuj-oE0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jswIcucLy7Xyyxi6b4eWqwKvk0mNLGNGSST-zuj-oE0/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "user": "={{ $json.user }}",
+            "category": "={{ $json.category }}",
+            "original_message": "={{ $json.original_message }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "original_message",
+              "displayName": "original_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        688,
+        -160
+      ],
+      "id": "49fb987b-de73-4132-ae7e-4492f9a07bdd",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "P6WVLdjm9RWMY7Rw",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.frankfurter.dev/v2/rate/usd/eur",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        -160
+      ],
+      "id": "0b513ddc-849a-4022-8422-3a11c9cbb012",
+      "name": "HTTP Request1",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1dd69968-59a2-40f3-a104-60e475a1efec",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "92fa3bb6781f284f9c980910256f51db4d6fd37004d3deb01190e23024ab7949"
+  },
+  "nodeGroups": [],
+  "id": "XkJTS4dTflswbwpy",
+  "tags": []
+}
